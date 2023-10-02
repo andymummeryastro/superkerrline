@@ -1,17 +1,18 @@
 program wrapper
   ! gfortran amodules.f90 super_kerr.f90
     implicit none
-    integer ne,i,ifl,j,jmax, nr, np
+    integer ne,i,ifl,j,jmax, nr, np, do_rt, do_sk
     parameter (nr=3000) 
     parameter (np=3000)
-    parameter (ne=2000,jmax=8)
+    parameter (ne=1000,jmax=8)
     real Emax,Emin,ear(0:ne),param(1),photar(ne),E,dE
-    double precision alpha(nr,np),beta(nr,np), g_fac(nr, np)
+    double precision alpha(nr,np), beta(nr,np), g_fac(nr, np), rs(nr, np)
     real ratio(ne)
     real sk_param(4)
     integer :: num_args, ix
     character(len=12), dimension(:), allocatable :: args
 
+    
     num_args = command_argument_count()
     allocate(args(num_args))  ! I've omitted checking the return status of the allocation 
   
@@ -23,6 +24,8 @@ program wrapper
     read( args(2), '(f10.0)' )  sk_param(2)   !inc   deg     inclination
     read( args(3), '(f10.0)' )  sk_param(3)   !index " "     emissivity
     read( args(4), '(f10.0)' )  sk_param(4)   !index keV     line energy
+    read( args(5), '(I2)' )  do_rt   !
+    read( args(6), '(I2)' )  do_sk   !
 
   ! Set energy grid
     Emax  = 2.0 * sk_param(4)
@@ -33,19 +36,19 @@ program wrapper
   
 
 
-  if (1 .eq. 1) then  
-    call raytrace_grid(alpha, beta, sk_param, g_fac)
+  if (1 .eq. do_rt) then  
+    call raytrace_grid(alpha, beta, sk_param, g_fac, rs)
   ! Write out model output
       open(99, file = 'rt_output.dat')
-      do j = 1,nr
-        do i = 1,np   
-         write(99,*) alpha(i, j), beta(i, j), g_fac(i, j)
+      do i = 1,nr
+        do j = 1,np   
+         write(99,*) alpha(i, j), beta(i, j), g_fac(i, j), rs(i, j)
       end do
     end do 
     close(99) 
   end if 
     
-
+  if (1 .eq. do_sk) then 
     call superline(ear,ne,sk_param,ifl,photar)
     
   ! Write out model output
@@ -56,6 +59,8 @@ program wrapper
        write(99,*)E,  E**2 * photar(i) / dE
     end do
     close(99) 
+  end if 
+
   end program wrapper
   
 ! Can't use an include for compiling within XSPEC
@@ -83,7 +88,7 @@ subroutine superline(ear,ne,param,ifl,photar)
   a       = dble( param(1) )                !Spin parameter
   inc     = dble( param(2) ) * pi / 180.d0  !Inclination (degrees)
   index   = dble( param(3) )                !Emissivity index
-  E_line  = dble( param(4) )                ! Line energy in keV
+  E_line  = dble( param(4) )                !Line energy in keV
 
   ! Derived and hardwired quantities
   rin     = disco(a)
@@ -101,7 +106,7 @@ subroutine superline(ear,ne,param,ifl,photar)
        earc(i) = Emin * (Emax/Emin)**(real(i)/real(nec))
      end do
      !Assign impossible initial values to previous parameters
-     ! Note that only impossible parameter is now cos(inc). 
+     !Note that the only impossible parameter is now cos(inc). 
      aprev   = 10.d0
      mu0prev = 10.d0
   end if
@@ -146,9 +151,7 @@ subroutine superline(ear,ne,param,ifl,photar)
               n = max( 1 , n   )
               n = min( n , nec )
               !Add to line profile
-              !if (dFe .eq. dFe) then 
               diskline(n) = diskline(n) + real( dFe )      
-              !end if
            end if
        end if
      end do
@@ -170,9 +173,7 @@ subroutine superline(ear,ne,param,ifl,photar)
 !           n = max( 1 , n   )
 !           n = min( n , nec )
 !           !Add to line profile
-!           !if (dFe .eq. dFe) then 
 !           diskline(n) = diskline(n) + real( dFe )      
-!           !end if
 !       end if
 !      end do
 !   end do
@@ -198,7 +199,7 @@ end subroutine superline
 
 
 !=======================================================================
-subroutine raytrace_grid(alpha, beta, param, g_fac)
+subroutine raytrace_grid(alpha, beta, param, g_fac, rs)
   ! Calculates observed disk spectrum
     use internal_grids
     implicit none
@@ -208,7 +209,7 @@ subroutine raytrace_grid(alpha, beta, param, g_fac)
     double precision rnmin,rnmax,d,rfunc,disco,mudisk,re
     double precision alpha(nro,nphi),beta(nro,nphi),dOmega(nro,nphi), g_fac(nro, nphi)
     double precision alphan(nro,nphi),betan(nro,nphi),dOmegan(nro,nphi)
-    double precision dlgfac
+    double precision dlgfac, rs(nro, nphi)
     logical needtrace
     
     pi  = acos(-1.d0)
@@ -250,6 +251,7 @@ subroutine raytrace_grid(alpha, beta, param, g_fac)
            re = re1(i,j)
             if( re .gt. rin .and. re .le. rout )then
                g_fac(i, j) = dlgfac( a,mu0,alpha(i,j),re )
+               rs(i, j) = re
             end if 
         end if
       end do

@@ -1,0 +1,5 @@
+superkerrline   4        5e-3     100.0    superkerrline   add     0        1
+a              " "       0.5      -10.0    -10.0           10.0    10.0     0.01
+inc            deg       49.0     1.0      5.0             80.0    89.0     0.1
+gamma	       " "	 3	  0        1	           10      15       0.1
+Eline	       keV       6.4      1e-7     1e-4            1e3     1e3      0.01
