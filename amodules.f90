@@ -13,8 +13,8 @@
 module internal_grids
   integer nex,nec,nro,nphi
   parameter (nex=2**13) !Must be power of two for FFTs
-  parameter (nec=500)  !Must be small for speed
-  parameter (nro=3000,nphi=3000)
+  parameter (nec=300)  !Must be small for speed
+  parameter (nro=300,nphi=300)
   real Emax,Emin,dloge,earx(0:nex),earc(0:nec)
   double precision aprev,mu0prev,pem1(nro,nphi),re1(nro,nphi)
   complex FTbbodx(4*nex)

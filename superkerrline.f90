@@ -2,9 +2,9 @@ program wrapper
   ! gfortran amodules.f90 super_kerr.f90
     implicit none
     integer ne,i,ifl,j,jmax, nr, np, do_rt, do_sk
-    parameter (nr=3000) 
-    parameter (np=3000)
-    parameter (ne=1000,jmax=8)
+    parameter (nr=300) 
+    parameter (np=300)
+    parameter (ne=500,jmax=8)
     real Emax,Emin,ear(0:ne),param(1),photar(ne),E,dE
     double precision alpha(nr,np), beta(nr,np), g_fac(nr, np), rs(nr, np)
     real ratio(ne)
@@ -99,8 +99,8 @@ subroutine superkerrline(ear,ne,param,ifl,photar)
   if( firstcall )then
      firstcall = .false.
      !Define coarse internal energy grid
-     Emax  = 2.0 * E_line!! Might need to change me for XSPEC. 
-     Emin  = 0.01 * E_line!! Might need to change me for XSPEC. 
+     Emax  = 50.0!2.0 * E_line!! Might need to change me for XSPEC. 
+     Emin  = 0.01!0.01 * E_line!! Might need to change me for XSPEC. 
      dloge = log10( Emax / Emin ) / real(nec)
      do i = 0,nec
        earc(i) = Emin * (Emax/Emin)**(real(i)/real(nec))
