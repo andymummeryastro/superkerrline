@@ -5,3 +5,5 @@
 *.pdf
 *.dat
 *.command
+plot*
+sk_conv

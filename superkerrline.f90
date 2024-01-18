@@ -1,65 +1,82 @@
 program wrapper
-  ! gfortran amodules.f90 super_kerr.f90
+  ! gfortran amodules.f90 superkerrline.f90
     implicit none
-    integer ne,i,ifl,j,jmax, nr, np, do_rt, do_sk
-    parameter (nr=300) 
-    parameter (np=300)
-    parameter (ne=500,jmax=8)
-    real Emax,Emin,ear(0:ne),param(1),photar(ne),E,dE
-    double precision alpha(nr,np), beta(nr,np), g_fac(nr, np), rs(nr, np)
-    real ratio(ne)
-    real sk_param(4)
-    integer :: num_args, ix
-    character(len=12), dimension(:), allocatable :: args
-
+    integer ne,i,ifl, jmax, nr, np
+    parameter (nr=1000) 
+    parameter (np=1000)
+    parameter (ne=2**13,jmax=8)
+    real Emax,Emin,ear(0:ne),photar(ne),E,dE
+    real sk_param(8)
+    real c_param(7)
+    real pi
+    pi = acos(-1.0)
     
-    num_args = command_argument_count()
-    allocate(args(num_args))  ! I've omitted checking the return status of the allocation 
+! Set parameters
+    sk_param(1) = 1.968 !a
+    sk_param(2) = 75.0  !inc (deg)
+    sk_param(3) = 6.4   !Eline (keV)
+    sk_param(4) = 4.0   !index_i
+    sk_param(5) = 3.0   !index_o
+    sk_param(6) = 30.0  !r_br (if negative then in units of ISCO)
+    sk_param(7) = -1.0  !r_i  (if negative then in units of ISCO)
+    sk_param(8) = 50.0  !r_o
   
-    do ix = 1, num_args
-        call get_command_argument(ix,args(ix))
-    end do
+! Set energy grid
+  Emax  = 400.0 !10.0
+  Emin  = 0.01  !0.5
+  do i = 0,ne
+     ear(i) = Emin * (Emax/Emin)**(real(i)/real(ne))
+  end do
   
-    read( args(1), '(f10.0)' )  sk_param(1)   !a     " "     spin
-    read( args(2), '(f10.0)' )  sk_param(2)   !inc   deg     inclination
-    read( args(3), '(f10.0)' )  sk_param(3)   !index " "     emissivity
-    read( args(4), '(f10.0)' )  sk_param(4)   !index keV     line energy
-    read( args(5), '(I2)' )  do_rt   !
-    read( args(6), '(I2)' )  do_sk   !
+! Call line profile model
+  call skline(ear,ne,sk_param,ifl,photar)
 
-  ! Set energy grid
-    Emax  = 2.0 * sk_param(4)
-    Emin  = 0.01 * sk_param(4)
-    do i = 0,ne
-      ear(i) = Emin * (Emax/Emin)**(real(i)/real(ne))
-    end do
+! Write out
+  open(99, file = 'sk_line_output.dat')
+  ! write(99,*)"skip on"  
+  do i = 1,ne
+    E  = 0.5 * ( ear(i) + ear(i-1) )
+    dE =         ear(i) - ear(i-1)
+    write(99,*)E,  E**2 * photar(i) / dE
+  end do
+  ! write(99,*)"no no"
   
-
-
-  if (1 .eq. do_rt) then  
-    call raytrace_grid(alpha, beta, sk_param, g_fac, rs)
-  ! Write out model output
-      open(99, file = 'rt_output.dat')
-      do i = 1,nr
-        do j = 1,np   
-         write(99,*) alpha(i, j), beta(i, j), g_fac(i, j), rs(i, j)
-      end do
-    end do 
-    close(99) 
-  end if 
-    
-  if (1 .eq. do_sk) then 
-    call superkerrline(ear,ne,sk_param,ifl,photar)
-    
-  ! Write out model output
-    open(99, file = 'sk_output.dat')
-    do i = 1,ne
-       E  = 0.5 * ( ear(i) + ear(i-1) )
-       dE =         ear(i) - ear(i-1)
-       write(99,*)E,  E**2 * photar(i) / dE
-    end do
-    close(99) 
-  end if 
+  ! Now for convolution model
+  ! Read in xillver spectrum
+  open(90,file='xillver_mo.dat')
+  do i = 1,3
+    read(90,*)
+  end do
+  do i = 1,ne
+    read(90,*)E,dE,photar(i)
+    photar(i) = photar(i) * ( ear(i) - ear(i-1) )
+  end do
+  close(90)
+  
+  ! Write out xillver spectrum
+  open(98, file = 'input_spectrum.dat')
+  do i = 1,ne
+    E  = 0.5 * ( ear(i) + ear(i-1) )
+    dE =         ear(i) - ear(i-1)
+    write(98,*)E,E**2*photar(i)/dE
+  end do
+  ! write(99,*)"no no"
+  
+  ! Set parameters
+  c_param(1:2) = sk_param(1:2)
+  c_param(3:7) = sk_param(4:8)
+  
+  ! Call convolution model
+  call skconv(ear,ne,c_param,ifl,photar)
+  
+  ! Write out
+  open(97, file = 'sk_conv_output.dat')
+  do i = 1,ne
+     E  = 0.5 * ( ear(i) + ear(i-1) )
+     dE =         ear(i) - ear(i-1)
+     write(97,*)E,  E**2 * photar(i) / dE
+  end do
+  ! write(99,*)"no no"
 
   end program wrapper
   
@@ -67,18 +84,18 @@ program wrapper
 ! include 'amodules.f90'
 
 !=======================================================================
-subroutine superkerrline(ear,ne,param,ifl,photar)
+subroutine skline(ear,ne,param,ifl,photar)
 ! Calculates observed disk spectrum
   use internal_grids
   implicit none
   integer ne,ifl,i,j,n
-  real ear(0:ne),param(4),photar(ne)
-  double precision a,inc,pi,rin,rout,mu0,index
+  real ear(0:ne),param(8),photar(ne)
+  double precision a,inc,pi,rin,rout,mu0,index_i, index_o, r_br, r_i, r_o
   double precision rnmin,rnmax,d,rfunc,disco,mudisk,re
   double precision alpha(nro,nphi),beta(nro,nphi),dOmega(nro,nphi)
   double precision alphan(nro,nphi),betan(nro,nphi),dOmegan(nro,nphi)
   double precision g, dlgfac, dFe, E_line
-  real diskline(nec)
+  real diskline(nec),sum,E,dE
   logical needtrace
   
   pi  = acos(-1.d0)
@@ -87,20 +104,34 @@ subroutine superkerrline(ear,ne,param,ifl,photar)
 ! Parameters
   a       = dble( param(1) )                !Spin parameter
   inc     = dble( param(2) ) * pi / 180.d0  !Inclination (degrees)
-  index   = dble( param(3) )                !Emissivity index
-  E_line  = dble( param(4) )                !Line energy in keV
+  E_line  = dble( param(3) )                !Line energy in keV
+  index_i = dble( param(4) )                !inner Emissivity index
+  index_o = dble( param(5) )                !outer Emissivity index
+  r_br    = dble( param(6) )                !break radius (rg)
+  r_i     = dble( param(7) )                !inner radius (rg)
+  r_o     = dble( param(8) )                !outer radius (rg)
 
   ! Derived and hardwired quantities
-  rin     = disco(a)
-  rout    = 30
+  if (r_i .lt. 0) then 
+    rin     = disco(a) * abs(r_i)
+  else
+    rin = max(r_i, disco(a))
+  end if 
+
+  if (r_br .lt. 0) then 
+    r_br     = disco(a) * abs(r_br)
+  end if 
+
+  rout    = min( r_o, 300.0 )
   mu0     = cos(inc)
+
   
 ! Initialize
   if( firstcall )then
      firstcall = .false.
      !Define coarse internal energy grid
-     Emax  = 50.0!2.0 * E_line!! Might need to change me for XSPEC. 
-     Emin  = 0.01!0.01 * E_line!! Might need to change me for XSPEC. 
+     Emax  = 20.0 !2.0 * E_line!! Might need to change me for XSPEC. 
+     Emin  = 0.1  !0.01 * E_line!! Might need to change me for XSPEC. 
      dloge = log10( Emax / Emin ) / real(nec)
      do i = 0,nec
        earc(i) = Emin * (Emax/Emin)**(real(i)/real(nec))
@@ -144,7 +175,10 @@ subroutine superkerrline(ear,ne,param,ifl,photar)
               g = dlgfac( a,mu0,alpha(i,j),re )
               !Add to line profile
               !Calculate contribution to line profile
-              dFe = g**3 * dOmega(i,j) * re**(-index)
+              dFe = g**3 * dOmega(i,j) * re**(-index_i)
+              if (re .gt. r_br) then 
+                dFe = dFe * re**(index_i) * r_br**(-index_i) * (re/r_br)**(-index_o)
+              end if 
 
               !Work out what bin this goes into
               n = ceiling( nec * log10(g*E_line/Emin) / log10(Emax/Emin) )
@@ -157,29 +191,6 @@ subroutine superkerrline(ear,ne,param,ifl,photar)
      end do
   end do
 
-! Loop through outer Newtonian grid
-! if (rout .gt. rnmin) then
-!   do j = 1,nphi
-!      do i = 1,nro
-!         call drandphithick(alphan(i,j),betan(i,j),mu0,mudisk,re,phie)
-!         if( re .gt. rin .and. re .le. rout )then
-!           g = dlgfac( a,mu0,alphan(i,j),re )
-!           !Add to line profile
-!           !Calculate contribution to line profile
-!           dFe = g**3 * dOmegan(i,j)
-
-!           !Work out what bin this goes into
-!           n = ceiling( nec * log10(g*E_line/Emin) / log10(Emax/Emin) )
-!           n = max( 1 , n   )
-!           n = min( n , nec )
-!           !Add to line profile
-!           diskline(n) = diskline(n) + real( dFe )      
-!       end if
-!      end do
-!   end do
-! end if 
-
-
 ! Convert to specific photon flux to interpolate
 do i = 1,nec
   diskline(i) = diskline(i) / ( earc(i) - earc(i-1) )
@@ -188,13 +199,97 @@ end do
 ! Rebin onto input grid
 call myinterp(nec,earc,diskline,ne,ear,photar)
 
+! Sort out edge effects and normalise
+sum = 0.0
+do i = 1,ne
+   E  = 0.5 * ( ear(i) + ear(i-1) )
+   dE = ear(i) - ear(i-1)
+   if( E .lt. Emin ) photar(i) = 0.0
+   if( E .gt. Emax ) photar(i) = 0.0
+   sum = sum + E * photar(i) * dE
+end do
+photar = photar / sum
+
 ! Convert back to photons per energy bin
 do i = 1,ne
   photar(i) = photar(i) * ( ear(i) - ear(i-1) )
 end do
   
   return
-end subroutine superkerrline
+end subroutine skline
+!=======================================================================
+
+
+
+!=======================================================================
+subroutine skconv(ear,ne,param,ifl,photar)
+! Superkerrline convolution model
+! Parameters
+! param(1) = a
+! param(2) = inc (deg)
+! param(3) = index_i
+! param(4) = index_o
+! param(5) = r_br
+! param(6) = r_i
+! param(7) = r_o
+  implicit none
+  integer ne,ifl,i,nex
+  parameter (nex=2**13)
+  real ear(0:ne),param(7),photar(ne)
+  real earx(0:nex),Emin,Emax,dloge
+  real restframex(nex),sk_param(8),linex(nex)
+  real convx(nex),px(nex),p(ne)
+  real E,dE
+  complex FTlinex(4*nex),FTrestframex(4*nex),FTconvx(4*nex)
+
+! Define fine internal logarithmic energy grid
+  Emax  = max( 1.1*ear(ne) , 12.0 )
+  Emin  = min( 0.9*ear(1)  , 1.0  )
+  dloge = log10( Emax / Emin ) / real(nex)
+  do i = 0,nex
+     earx(i) = Emin * (Emax/Emin)**(real(i)/real(nex))
+  end do
+  
+! Rebin input onto internal logarithmic energy grid
+  do i = 1,ne
+     dE = ear(i) - ear(i-1)
+     photar(i) = photar(i) / dE
+  end do
+  call myinterp(ne,ear,photar,nex,earx,restframex)
+  do i = 1,nex
+     dE = earx(i) - earx(i-1)
+     restframex(i) = restframex(i) * dE
+  end do
+  
+! Calculate line profile
+  sk_param(1:2) = param(1:2)   !physical parameters the same
+  sk_param(3)   = earx(nex/2)  !Eline = centre of internal grid
+  sk_param(4:8) = param(3:7)   !physical parameters the same
+  call skline(earx,nex,sk_param,ifl,linex)
+
+! Convolve the two
+  !Fourier transform
+  call pad4FFT(nex,linex,FTlinex)
+  call pad4FFT(nex,restframex,FTrestframex)
+  !Multiply together
+  FTconvx = FTlinex * FTrestframex
+  !Inverse Fourier transform
+  call pad4invFFT(1e-7,nex,FTconvx,convx)
+  convx = 2.0 * convx
+  
+! Rebin onto input array
+  do i = 1,nex
+    dE    = earx(i) - earx(i-1)
+    px(i) = convx(i) / dE
+  end do
+  call myinterp(nex,earx,px,ne,ear,p)
+  do i = 1,ne
+     dE        = ear(i) - ear(i-1)
+     photar(i) = p(i) * dE
+  end do
+
+  return
+end subroutine skconv  
 !=======================================================================
 
 
@@ -523,3 +618,194 @@ end subroutine getrgrid
       end subroutine drandphithick
 !-----------------------------------------------------------------------
 
+
+!-----------------------------------------------------------------------
+subroutine pad4FFT(ne,photar,padFT)
+! Takes spectrum photar(1:ne), pads out with zeros to make it a length
+! of 4*ne, and Fourier transforms to padFT(1:4*ne), which is a function
+! of 1/E
+  implicit none
+  integer ne,i
+  real photar(ne),padphot(4*ne)
+  complex padFT(4*ne)
+
+! Pad out the array
+  padphot = 0.0
+  do i = 1,ne
+     padphot(i+2*ne) = photar(i)
+  end do
+
+! Call the energy Fourier transform code
+  call E_FT(4*ne,padphot,padFT)
+
+  return
+end subroutine pad4FFT      
+!-----------------------------------------------------------------------
+
+
+
+
+!-----------------------------------------------------------------------
+subroutine pad4invFFT(dyn,ne,padFT,conv)
+! Takes padFT(1:4*ne), and zero-padded function of 1/E and inverse
+! Fourier transforms to conv(ne), which is a non-zero padded spectrum
+  implicit none
+  integer ne,i
+  real dyn,conv(ne),padconv(4*ne),photmax
+  complex padFT(4*ne)
+
+! Inverse Fourier transform padded FT
+  call E_invFT(4*ne,padFT,padconv)
+
+! Populate output array
+  photmax = 0.0
+  do i = 1,ne
+    conv(i) = padconv(i+5*ne/2)
+    photmax = max( photmax , conv(i) )
+  end do
+
+! Clean any residual edge effects
+  do i = 1,ne
+    if( abs(conv(i)) .lt. abs(dyn*photmax) ) conv(i) = 0.0
+  end do
+
+  return
+end subroutine pad4invFFT
+!-----------------------------------------------------------------------
+
+
+
+
+
+!-----------------------------------------------------------------------
+subroutine E_invFT(nex,cc,conv)
+! Takes the complex array cc(1:nex), which is a function of 1/E
+! and inverse Fourier transforms to get back a real spectrum as a
+! function of E, conv(1:nex)
+  implicit none
+  integer nex,i
+  real conv(nex),cdata(2*nex)
+  complex cc(nex)
+
+! Put back into four1 style arrays
+  do i = 1,nex
+    cdata(2*i-1) =  real( cc(i) )
+    cdata(2*i  ) = aimag( cc(i) )
+  end do
+      
+! Then transform back
+  call ourfour1(cdata,nex,1)
+      
+! Move arrays back into original format
+  !-ve frequencies
+  do i = 1,nex/2-1
+    conv(i) = cdata(2*i+nex+1)
+  end do
+  !DC component
+  conv(nex/2) = cdata(1)
+  !+ve frequencies
+  do i = nex/2,nex
+    conv(i) = cdata(2*i-nex+1)
+  end do
+  return
+end subroutine E_invFT
+!-----------------------------------------------------------------------
+
+
+
+!-----------------------------------------------------------------------
+subroutine E_FT(nex,photarx,bc)
+! Takes the real array photarx(1:nex), which is a spectrum as a
+! function of photon energy E and Fourier transforms to bc(1:nex),
+! which is complex and a function of 1/E.
+! Uses FFTs, so nex must be a power of 2.
+! Uses the inverse transform of four1.
+  implicit none
+  integer nex,i
+  real photarx(nex)
+  real bdata(2*nex)
+  complex bc(nex)
+
+! Move arrays into arrays for four1
+  bdata = 0.0
+  !-ve frequencies
+  do i = 1,nex/2-1
+    bdata(2*i+nex+1) = photarx(i)
+  end do
+  !DC component
+  bdata(1) = photarx(nex/2)
+  !+ve frequencies
+  do i = nex/2,nex
+    bdata(2*i-nex+1) = photarx(i)
+  end do
+      
+! Now do the inverse FFT
+  call ourfour1(bdata,nex,-1)
+      
+! Now put into complex arrays
+  do i = 1,nex
+    bc(i) = complex( bdata(2*i-1) , bdata(2*i) ) / sqrt(float(nex))
+  end do
+
+  return
+end subroutine E_FT
+!-----------------------------------------------------------------------
+
+
+
+!-----------------------------------------------------------------------
+      SUBROUTINE ourfour1(data,nn,isign)
+      INTEGER isign,nn
+      REAL data(2*nn)
+      INTEGER i,istep,j,m,mmax,n
+      REAL tempi,tempr
+      DOUBLE PRECISION theta,wi,wpi,wpr,wr,wtemp
+      n=2*nn
+      j=1
+      do 11 i=1,n,2
+        if(j.gt.i)then
+          tempr=data(j)
+          tempi=data(j+1)
+          data(j)=data(i)
+          data(j+1)=data(i+1)
+          data(i)=tempr
+          data(i+1)=tempi
+        endif
+        m=n/2
+1       if ((m.ge.2).and.(j.gt.m)) then
+          j=j-m
+          m=m/2
+        goto 1
+        endif
+        j=j+m
+11    continue
+      mmax=2
+2     if (n.gt.mmax) then
+        istep=2*mmax
+        theta=6.28318530717959d0/(isign*mmax)
+        wpr=-2.d0*sin(0.5d0*theta)**2
+        wpi=sin(theta)
+        wr=1.d0
+        wi=0.d0
+        do 13 m=1,mmax,2
+          do 12 i=m,n,istep
+            j=i+mmax
+            tempr=sngl(wr)*data(j)-sngl(wi)*data(j+1)
+            tempi=sngl(wr)*data(j+1)+sngl(wi)*data(j)
+            data(j)=data(i)-tempr
+            data(j+1)=data(i+1)-tempi
+            data(i)=data(i)+tempr
+            data(i+1)=data(i+1)+tempi
+12        continue
+          wtemp=wr
+          wr=wr*wpr-wi*wpi+wr
+          wi=wi*wpr+wtemp*wpi+wi
+13      continue
+        mmax=istep
+      goto 2
+      endif
+      return
+      end
+!-----------------------------------------------------------------------
+
+      

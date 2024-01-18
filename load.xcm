@@ -1,2 +1,2 @@
-initpackage superkerrline lmodel.dat .
-lmod superkerrline .
+initpackage superkerr lmodel.dat superkerrline.f90
+lmod superkerr .
