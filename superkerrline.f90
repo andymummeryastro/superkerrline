@@ -538,7 +538,7 @@ function rfunc(a,mu0)
   implicit none
   double precision rfunc,mu0,a
   if (a .gt. 1.0) then 
-    rfunc = 0.01   
+    rfunc = 0.1   
   else if( a .gt. 0.8 )then
     rfunc = 1.5d0 + 0.5d0 * mu0**5.5d0
     rfunc = min( rfunc , -0.1d0 + 5.6d0*mu0 )
