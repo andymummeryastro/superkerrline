@@ -10,7 +10,8 @@ Please cite this paper if you use this model.
 * The main program is a fortran90 file ``superkerrline.f90``
 * The main program contains both of the models ``skine`` and ``skconv``
 * Raytracing modules are included in the fortran90 file ``amodules.f90``, and associated ``X.mod`` files. 
-* Files to load this into XSPEC ``load.xcm`` and ``lmodel.dat`` is also included. 
+* Files to load this into XSPEC ``load.xcm`` and ``lmodel.dat`` is also included.
+* Changing the grid parameters ``nro`` and ``nphi`` in ``amodules.f90`` will trade model speed for spectral smoothness 
 
 
 ## Full model input parameter description
@@ -29,7 +30,7 @@ All of the model parameters are listed below, along with their units and limits 
 
 
 In addition, the ``skline`` model takes as input a line energy $`E_{\rm line}`$, which has units of keV. 
-The ``skconv'' model is an XSPEC convolution model, and takes as input a model spectrum.  
+The ``skconv`` model is an XSPEC convolution model, and takes as input a model spectrum.  
 
 ## Loading into XSPEC 
 * For use in the XSPEC software (https://heasarc.gsfc.nasa.gov/xanadu/xspec/)
